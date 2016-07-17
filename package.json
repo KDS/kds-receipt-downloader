@@ -1,0 +1,11 @@
+{
+  "name": "ReceiptDownload",
+  "version": "1.0.0",
+  "description": "Kds Receipt Downloader",
+  "author": "KDS",
+  "main": "receiptDownload.js",
+  "dependencies": {
+    "csv-parser": "^1.9.3",
+    "sax": "^1.2.1"
+  }
+}
