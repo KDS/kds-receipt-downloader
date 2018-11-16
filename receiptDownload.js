@@ -135,7 +135,7 @@ function processXmlExportFile() {
     });
 
     saxParser.on('text', function(text) {
-        if (currentNode == 'Receipt') {
+        if (currentNode == 'Receipt' || currentNode == 'VehicleRegistrationCertificate') {
             var receipt = text.trim();
             if (receipt) {
                 downloadReceipt(receipt);
@@ -155,6 +155,10 @@ function processCsvExportFile() {
             if (data.Receipt) {
                 downloadReceipt(data.Receipt);
             }
+            
+            if (data.VehicleRegistrationCertificate) {
+                downloadReceipt(data.VehicleRegistrationCertificate);
+            }
         });
 }
 
@@ -163,8 +167,7 @@ function downloadReceipt(receiptUrl) {
     var receiptFileName = parsedUrl.path.split('/').join('-').slice(1);
     var receiptFilePath = path.join(outputDirectory, receiptFileName);
 
-    if (
-        fileExists(receiptFilePath)) {
+    if (fileExists(receiptFilePath)) {
         console.log('%s\t%s', receiptFileName, 'Skipped');
         skipCount++;
         return;
