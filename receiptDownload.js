@@ -100,7 +100,8 @@ function prepareErrorLogFile() {
 }
 
 function writeToErrorLog(receiptUrl, httpStatusCode, errorMessage) {
-    fs.appendFile(errorLogFile, [receiptUrl, '\t', httpStatusCode, '\t', errorMessage, os.EOL].join(''));
+    const cb = (err) => { if(err) throw err; }
+    fs.appendFile(errorLogFile, [receiptUrl, '\t', httpStatusCode, '\t', errorMessage, os.EOL].join(''), cb);
 }
 
 function fileExists(filePath) {
