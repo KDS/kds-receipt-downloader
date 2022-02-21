@@ -1,4 +1,4 @@
- // Dependencies
+// Dependencies
 var os = require('os');
 var fs = require('fs');
 var path = require('path');
@@ -24,7 +24,7 @@ var errorCount = 0;
 var useProxy = typeof proxy !== 'undefined';
 var proxyDetails = useProxy ? proxy.split(':') : [];
 
-process.on('exit', function(code) {
+process.on('exit', function (code) {
     if (code == -1) return;
     console.log('');
     console.log('Statistics');
@@ -100,7 +100,7 @@ function prepareErrorLogFile() {
 }
 
 function writeToErrorLog(receiptUrl, httpStatusCode, errorMessage) {
-    const cb = (err) => { if(err) throw err; }
+    const cb = (err) => { if (err) throw err; }
     fs.appendFile(errorLogFile, [receiptUrl, '\t', httpStatusCode, '\t', errorMessage, os.EOL].join(''), cb);
 }
 
@@ -123,7 +123,7 @@ function directoryExists(dirPath) {
 function deleteIfExists(filePath) {
     try {
         fs.unlinkSync(filePath);
-    } catch (err) {}
+    } catch (err) { }
 }
 
 function processXmlExportFile() {
@@ -131,11 +131,11 @@ function processXmlExportFile() {
     var saxParser = sax.createStream(true);
     var currentNode = '';
 
-    saxParser.on('opentag', function(node) {
+    saxParser.on('opentag', function (node) {
         currentNode = node.name;
     });
 
-    saxParser.on('text', function(text) {
+    saxParser.on('text', function (text) {
         if (currentNode == 'Receipt' || currentNode == 'VehicleRegistrationCertificate') {
             var receipt = text.trim();
             if (receipt) {
@@ -152,11 +152,11 @@ function processCsvExportFile() {
         .pipe(csv({
             separator: csvSeparator
         }))
-        .on('data', function(data) {
+        .on('data', function (data) {
             if (data.Receipt) {
                 downloadReceipt(data.Receipt);
             }
-            
+
             if (data.VehicleRegistrationCertificate) {
                 downloadReceipt(data.VehicleRegistrationCertificate);
             }
@@ -165,19 +165,19 @@ function processCsvExportFile() {
 
 function downloadReceipt(receiptUrl) {
     var parsedUrl = url.parse(receiptUrl);
-    var receiptFileName = parsedUrl.path.split('/').join('-').slice(1);
-    var receiptFilePath = path.join(outputDirectory, receiptFileName);
+    var originalDownloadedReceiptFileName = parsedUrl.path.split('/').join('-').slice(1);
+    var originalDownloadedReceiptFilePath = path.join(outputDirectory, originalDownloadedReceiptFileName);
 
-    if (fileExists(receiptFilePath)) {
-        console.log('%s\t%s', receiptFileName, 'Skipped');
+    if (fileExists(originalDownloadedReceiptFilePath)) {
+        console.log('%s\t%s', originalDownloadedReceiptFileName, 'Skipped');
         skipCount++;
         return;
     }
 
-    var fileStream = fs.createWriteStream(receiptFilePath);
     var timeoutStatus = '';
 
-    https.get({
+    https.get(
+        {
             protocol: parsedUrl.protocol,
             hostname: useProxy ? proxyDetails[0] : parsedUrl.hostname,
             port: useProxy ? proxyDetails[1] : parsedUrl.port,
@@ -187,45 +187,75 @@ function downloadReceipt(receiptUrl) {
                 'Authorization': 'Bearer ' + authToken
             }
         },
-        function(response) {
+        function (response) {
             if (response.statusCode != 200) {
                 writeToErrorLog(receiptUrl, response.statusCode, 'Response status is not OK');
                 console.log('%s\t%s', receiptUrl, 'Failed with http' + response.statusCode);
                 errorCount++;
-                deleteIfExists(receiptFilePath);
                 response.resume();
                 return;
             }
 
+            var elementsFromPath = parsedUrl.path.split('/').slice(1);
+
+            var contentDisposition = response.headers["content-disposition"];
+
+            if (contentDisposition) {
+                var match = contentDisposition.match(/filename=(.+)$/i);
+
+                if (match && match.length > 0) {
+                    var newFileName = match[0].replace('filename=', '');
+                    var originalFileName = elementsFromPath[elementsFromPath.length - 1];
+                    if (originalFileName != newFileName) {
+                        console.log('WARN: %s was not found, because it might be regenerated on %s', originalFileName, newFileName);
+
+                        elementsFromPath[elementsFromPath.length - 1] = newFileName;
+                    }
+                }
+            }
+
+            var computedReceiptFileName = elementsFromPath.join('-');
+            var computedReceiptFilePath = path.join(outputDirectory, computedReceiptFileName);
+
+            if (fileExists(computedReceiptFilePath)) {
+                console.log('WARN: %s\t%s', computedReceiptFileName, 'Skipped: because you already downloaded that file.');
+                skipCount++;
+                return;
+            }
+
+            if (computedReceiptFileName != originalDownloadedReceiptFileName)
+                console.log('WARN: this file \'%s\' will replace this file \'%s\'.', computedReceiptFileName, originalDownloadedReceiptFileName);
+
+            var fileStream = fs.createWriteStream(computedReceiptFilePath);
             response.pipe(fileStream);
 
-            fileStream.on('finish', function() {
-                fileStream.close(function() {
+            fileStream.on('finish', function () {
+                fileStream.close(function () {
                     var expectedLength = response.headers['content-length'];
                     if (typeof expectedLength !== 'undefined') {
                         expectedLength = parseInt(expectedLength);
-                        var outputFileSize = fs.statSync(receiptFilePath).size;
+                        var outputFileSize = fs.statSync(computedReceiptFilePath).size;
                         if (outputFileSize === expectedLength) {
-                            console.info('%s\t%s', receiptFileName, 'Downloaded');
+                            console.info('%s\t%s', computedReceiptFileName, 'Downloaded');
                             downloadCount++;
                         } else {
-                            console.log('%s\t%s', receiptFileName, 'Interrupted');
+                            console.log('%s\t%s', computedReceiptFileName, 'Interrupted');
                             errorCount++;
-                            deleteIfExists(receiptFilePath);
+                            deleteIfExists(computedReceiptFilePath);
                             writeToErrorLog(receiptUrl, 200, 'Interrupted. Deleted the ' + outputFileSize + 'B incomplete file (expected ' + expectedLength + 'B).');
                         }
                     } else {
-                        console.log('%s\t%s', receiptFileName, 'Downloaded (size not verified)');
+                        console.log('%s\t%s', computedReceiptFileName, 'Downloaded (size not verified)');
                         downloadCount++;
                     }
                 });
             });
         }
-    ).on('error', function(err) {
+    ).on('error', function (err) {
         errorCount++;
         writeToErrorLog(receiptUrl, '', timeoutStatus + 'Failed to GET the http response: ' + err.message);
-        deleteIfExists(receiptFilePath);
-    }).setTimeout(requestTimeout, function() {
+        deleteIfExists(originalDownloadedReceiptFilePath);
+    }).setTimeout(requestTimeout, function () {
         timeoutStatus = 'Timeout - ';
         this.abort();
     });
